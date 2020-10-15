@@ -1,0 +1,16 @@
+{
+  "name": "state-channel",
+  "version": "0.0.2",
+  "description": "Make API-Endpoints for Ethereum BlockChain",
+  "scripts": {
+    "test": "truffle test test/*",
+    "migrate": "truffle migrate --reset --all"
+  },
+  "author": "Moses Igbuku",
+  "license": "MIT",
+  "devDependencies": {
+    "truffle": "5.0.5",
+    "web3": "0.20.0"
+  },
+  "dependencies": {}
+}
