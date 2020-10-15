@@ -1,11 +1,10 @@
-// Allows us to use ES6 in our migrations and tests.
-// require('babel-register')
+require('dotenv').config();
 
 module.exports = {
   networks: {
     development: {
-      host: '127.0.0.1',
-      port: 8545,
+      host: process.env.GANACHE_HOST,
+      port: process.env.GANACHE_PORT,
       network_id: '*'
     }
   },
