@@ -1,6 +1,6 @@
 const SimpleERC20Token = artifacts.require('SimpleERC20Token');
-const EthCrypto = require('eth-crypto');
 const fs = require('fs');
+const { createSignature, createStateChannelReceipt, approveStateChannelReceipt } = require('../stateChannel');
 
 const ganacheKeys = JSON.parse(fs.readFileSync('./ganache-keys.json'));
 const addressPrivateKeyPairs = ganacheKeys.private_keys;
@@ -22,11 +22,7 @@ contract('SimpleERC20Token', (accounts) => {
     privateKey: addressPrivateKeyPairs[addresses[2]],
   };
 
-  const owner = accounts[0];
-  const account1 = accounts[1];
-  const account2 = accounts[2];
-
-  const initialSupply = +process.env.INITIAL_SUPPLY;
+  const initialSupply = 200000;
 
   it('should set initial balance of contract owner on initialization', async () => {
     const tokenInstance = await SimpleERC20Token.deployed();
@@ -291,28 +287,106 @@ contract('SimpleERC20Token', (accounts) => {
     assert.equal(Number(participant1Balance), participant1BalUpdate);
     assert.equal(Number(participant2Balance), participant2BalUpdate);
   });
+
+  it('can update balances multiple times offchain', async () => {
+    const tokenInstance = await SimpleERC20Token.new(initialSupply, { from: participantAccount1.address });
+
+    const transferAmount = 80000;
+
+    const addressCurrentBalance = Number(await tokenInstance.balanceOf(participantAccount1.address));
+    const targetAddressCurrentBalance = Number(await tokenInstance.balanceOf(participantAccount2.address));
+
+    assert.equal(targetAddressCurrentBalance, 0);
+    assert.equal(addressCurrentBalance, initialSupply);
+
+    // participant1 initiates transfer to participant2
+    let stateChannelReceipt = createStateChannelReceipt({
+      address: participantAccount1.address,
+      privateKey: participantAccount1.privateKey,
+      value: transferAmount,
+      targetAddress: participantAccount2.address,
+      addressCurrentBalance,
+      targetAddressCurrentBalance,
+    });
+
+    assert.equal(stateChannelReceipt.nonce, 0);
+
+    assert.equal(stateChannelReceipt.participant1, participantAccount1.address);
+    assert.equal(stateChannelReceipt.participant2, participantAccount2.address);
+
+    // balances are updated offline
+    assert.equal(stateChannelReceipt.participant1Bal, addressCurrentBalance - transferAmount);
+    assert.equal(stateChannelReceipt.participant2Bal, transferAmount);
+
+    // participant2 approves channel receipt
+    const approvedReceipt = approveStateChannelReceipt(
+      stateChannelReceipt,
+      participantAccount2.address,
+      participantAccount2.privateKey,
+    );
+
+    assert.equal(approvedReceipt.tx.value, transferAmount);
+    assert.equal(approvedReceipt.tx.from, participantAccount1.address);
+    assert.equal(approvedReceipt.tx.to, participantAccount2.address);
+
+    // validate signature for participant1
+    const recoveredAddress1 = await tokenInstance.recoverSigner(
+      approvedReceipt.participant1Message,
+      approvedReceipt.participant1Signature,
+    );
+
+    assert.equal(recoveredAddress1.toLocaleLowerCase(), participantAccount1.address.toLocaleLowerCase());
+
+    const recoveredAddress2 = await tokenInstance.recoverSigner(
+      approvedReceipt.participant2Message,
+      approvedReceipt.participant2Signature,
+    );
+
+    assert.equal(recoveredAddress2.toLocaleLowerCase(), participantAccount2.address.toLocaleLowerCase());
+
+    // 2nd balance update
+    // participant2 transfer to participant 1
+    const transferAmount2 = 35000;
+
+    const stateChannelReceipt2 = createStateChannelReceipt({
+      address: participantAccount2.address,
+      privateKey: participantAccount2.privateKey,
+      value: transferAmount2,
+      targetAddress: participantAccount1.address,
+      oldReceipt: approvedReceipt,
+    });
+
+    const approvedReceipt2 = approveStateChannelReceipt(
+      stateChannelReceipt2,
+      participantAccount1.address,
+      participantAccount1.privateKey,
+    );
+
+    assert.equal(stateChannelReceipt2.nonce, 1);
+
+    assert.equal(approvedReceipt2.tx.value, transferAmount2);
+    assert.equal(approvedReceipt2.tx.from, participantAccount2.address);
+    assert.equal(approvedReceipt2.tx.to, participantAccount1.address);
+
+    // save final updates to our tokenContract
+    await tokenInstance.persistState(
+      approvedReceipt2.participant1,
+      approvedReceipt2.participant2,
+      approvedReceipt2.participant1Bal,
+      approvedReceipt2.participant2Bal,
+      approvedReceipt2.participant1Message,
+      approvedReceipt2.participant2Message,
+      approvedReceipt2.participant1Signature,
+      approvedReceipt2.participant2Signature,
+      {
+        from: participantAccount2.address,
+      },
+    );
+
+    const participant1FinalBalance = Number(await tokenInstance.balanceOf(participantAccount1.address));
+    const participant2FinalBalance = Number(await tokenInstance.balanceOf(participantAccount2.address));
+
+    assert.equal(participant1FinalBalance, initialSupply - transferAmount + transferAmount2);
+    assert.equal(participant2FinalBalance, transferAmount - transferAmount2);
+  });
 });
-
-/*
-[
-  { type: "uint256", value: "5" },
-  { type: "string", value: "Banana" }
-]
-
- */
-
-function createSignature({ participant1Bal, participant2Bal, participant1, participant2, privateKey }) {
-  const message = EthCrypto.hash.keccak256([
-    { type: 'uint', value: participant1Bal },
-    { type: 'uint', value: participant2Bal },
-    { type: 'address', value: participant1 },
-    { type: 'address', value: participant2 },
-  ]);
-
-  const signature = EthCrypto.sign(privateKey, message);
-
-  return {
-    message,
-    signature,
-  };
-}
