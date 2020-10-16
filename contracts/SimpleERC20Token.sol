@@ -97,8 +97,34 @@ contract SimpleERC20Token {
        return (v, r, s);
    }
     
-    function persistState(address from, address to, uint256 value, bytes32 sigFrom, bytes32 sigTo) public returns (bool) {
-        return transferFrom(from, to, value);
+    function persistState (
+        address participant1,
+        address participant2,
+        uint participant1Bal,
+        uint participant2Bal,
+        bytes32 participant1Message,
+        bytes32 participant2Message,
+        bytes memory participant1Signature,
+        bytes memory participant2Signature
+    ) public {
+        uint sumCurrentBal = balanceOf(participant1) + balanceOf(participant2);
+
+        require(msg.sender == participant1 || msg.sender == participant2, "Transaction allowed for only participants");
+        
+        // validate signatures of both participants
+        address recoveredAddress1 = recoverSigner(participant1Message, participant1Signature);
+        
+        require(recoveredAddress1 == participant1, "participant1 does not match recovered signature");
+        address recoveredAddress2 = recoverSigner(participant2Message, participant2Signature);
+        
+        require(recoveredAddress2 == participant2, "participant2 does not match recovered signature");
+        
+        require(sumCurrentBal == participant1Bal + participant2Bal, "Sum of current balances must equal sum of new balances");
+        
+        
+        _balances[participant1] = participant1Bal;
+        _balances[participant2] = participant2Bal;
+        
     }
 }
 

@@ -87,34 +87,209 @@ contract('SimpleERC20Token', (accounts) => {
 
   // todo add test case for splitSignature(bytes memory sig)
 
-  it('can get address from signature', async () => {
-    const payload = {
-      value: 'Hello world',
-      privateKey: ownerAccount.privateKey,
-    };
-
-    const result = createSignature(payload);
+  it('can get signer address from signature', async () => {
+    const result = createSignature({
+      participant1Bal: 4000,
+      participant2Bal: 5000,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount1.privateKey,
+    });
 
     const tokenInstance = await SimpleERC20Token.new(initialSupply, { from: ownerAccount.address });
 
     const signerAddress = await tokenInstance.recoverSigner(result.message, result.signature);
 
-    assert.equal(signerAddress.toLocaleLowerCase(), ownerAccount.address.toLocaleLowerCase());
+    assert.equal(signerAddress.toLocaleLowerCase(), participantAccount1.address.toLocaleLowerCase());
   });
 
-  it('rejects state channel receipts if not signed by both parties', async () => {
-    // A starts tries to transfer to B
-    // A creates new channel receipt
-    // A signs Channel Receipt
-    // A sends Channel receipt to contract to complete
+  it('rejects update if sender is not a participant', async () => {
+    const payload1 = {
+      value: 'Hello world',
+      privateKey: participantAccount1.privateKey,
+    };
+
+    const payload2 = {
+      value: 'Hello world',
+      privateKey: participantAccount2.privateKey,
+    };
+
+    const tokenInstance = await SimpleERC20Token.new(initialSupply, { from: ownerAccount.address });
+
+    // transfer tokens to participant1
+    const transferAmount = 9000;
+    await tokenInstance.transfer(participantAccount1.address, transferAmount);
+
+    const participant1BalUpdate = transferAmount / 2;
+    const participant2BalUpdate = transferAmount / 2;
+
+    // creating messages and signatures
+    const result1 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount1.privateKey,
+    });
+    const result2 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount2.privateKey,
+    });
+
+    try {
+      await tokenInstance.persistState(
+        participantAccount1.address,
+        participantAccount2.address,
+        participant1BalUpdate,
+        participant2BalUpdate,
+        result1.message,
+        result2.message,
+        result1.signature,
+        result2.signature,
+        {
+          from: participantAccount1.address,
+        },
+      );
+    } catch (err) {
+      const participant1Balance = await tokenInstance.balanceOf(participantAccount1.address);
+      assert.equal(participant1Balance, transferAmount);
+    }
   });
 
-  it('accepts state channel receipts if it is signed by both parties', async () => {
-    // A starts tries to transfer to B
-    // A creates new channel receipt
-    // A signs Channel Receipt
-    // A sends Channel Receipt TO B
-    // B signs Channel Receipt
+  it('rejects update if sum of new balances do not equal to sum of old balances', async () => {
+    const tokenInstance = await SimpleERC20Token.new(initialSupply, { from: ownerAccount.address });
+
+    // transfer tokens to participant1
+    const transferAmount = 9000;
+    await tokenInstance.transfer(participantAccount1.address, transferAmount);
+
+    const participant1BalUpdate = transferAmount * 2;
+    const participant2BalUpdate = transferAmount * 2;
+
+    // creating messages and signatures
+    const result1 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount1.privateKey,
+    });
+    const result2 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount2.privateKey,
+    });
+
+    try {
+      await tokenInstance.persistState(
+        participantAccount1.address,
+        participantAccount2.address,
+        participant1BalUpdate,
+        participant2BalUpdate,
+        result1.message,
+        result2.message,
+        result1.signature,
+        result2.signature,
+      );
+    } catch (err) {
+      const participant1Balance = await tokenInstance.balanceOf(participantAccount1.address);
+      assert.equal(participant1Balance, transferAmount);
+    }
+  });
+
+  it('rejects update if recovered signer address does not match participant', async () => {
+    const tokenInstance = await SimpleERC20Token.new(initialSupply, { from: ownerAccount.address });
+
+    // transfer tokens to participant1
+    await tokenInstance.transfer(participantAccount1.address, initialSupply);
+
+    const participant1BalUpdate = initialSupply / 2;
+    const participant2BalUpdate = initialSupply / 2;
+
+    // creating messages and signatures
+    const result1 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount1.privateKey,
+    });
+    const result2 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount2.privateKey,
+    });
+
+    try {
+      await tokenInstance.persistState(
+        ownerAccount.address,
+        participantAccount2.address,
+        participant1BalUpdate,
+        participant2BalUpdate,
+        result1.message,
+        result2.message,
+        result1.signature,
+        result2.signature,
+        {
+          from: participantAccount2.address,
+        },
+      );
+    } catch (err) {}
+
+    const participant1Balance = await tokenInstance.balanceOf(participantAccount1.address);
+    assert.equal(participant1Balance, initialSupply);
+  });
+
+  it('successfully updates balances of participants', async () => {
+    const tokenInstance = await SimpleERC20Token.new(initialSupply, { from: ownerAccount.address });
+
+    // transfer tokens to participant1
+    await tokenInstance.transfer(participantAccount1.address, initialSupply);
+
+    const participant1BalUpdate = initialSupply / 2;
+    const participant2BalUpdate = initialSupply / 2;
+
+    // creating messages and signatures
+    const result1 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount1.privateKey,
+    });
+    const result2 = createSignature({
+      participant1Bal: participant1BalUpdate,
+      participant2Bal: participant2BalUpdate,
+      participant1: participantAccount1.address,
+      participant2: participantAccount2.address,
+      privateKey: participantAccount2.privateKey,
+    });
+
+    await tokenInstance.persistState(
+      participantAccount1.address,
+      participantAccount2.address,
+      participant1BalUpdate,
+      participant2BalUpdate,
+      result1.message,
+      result2.message,
+      result1.signature,
+      result2.signature,
+      {
+        from: participantAccount2.address,
+      },
+    );
+
+    const participant1Balance = await tokenInstance.balanceOf(participantAccount1.address);
+    const participant2Balance = await tokenInstance.balanceOf(participantAccount2.address);
+    assert.equal(Number(participant1Balance), participant1BalUpdate);
+    assert.equal(Number(participant2Balance), participant2BalUpdate);
   });
 });
 
@@ -126,11 +301,14 @@ contract('SimpleERC20Token', (accounts) => {
 
  */
 
-function createSignature({ value, privateKey }) {
-  //   const signerIdentity = EthCrypto.createIdentity();
-  const message = EthCrypto.hash.keccak256([{ type: 'string', value }]);
+function createSignature({ participant1Bal, participant2Bal, participant1, participant2, privateKey }) {
+  const message = EthCrypto.hash.keccak256([
+    { type: 'uint', value: participant1Bal },
+    { type: 'uint', value: participant2Bal },
+    { type: 'address', value: participant1 },
+    { type: 'address', value: participant2 },
+  ]);
 
-  //   const signature = EthCrypto.sign(signerIdentity.privateKey, message);
   const signature = EthCrypto.sign(privateKey, message);
 
   return {
