@@ -1,7 +1,7 @@
 {
   "name": "state-channel",
   "version": "0.0.2",
-  "description": "Make API-Endpoints for Ethereum BlockChain",
+  "description": "Demonstrate State Channels for ethereum blockchain",
   "scripts": {
     "ganache": "ganache-cli --account_keys_path ganache-keys.json",
     "test": "export INITIAL_SUPPLY=200000; truffle test",
