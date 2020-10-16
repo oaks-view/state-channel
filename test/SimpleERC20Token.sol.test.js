@@ -34,55 +34,6 @@ contract('SimpleERC20Token', (accounts) => {
     assert.equal(Number(ownerBalance), totalSupply);
   });
 
-  it('can get the amount transferable from one account to the other', async () => {
-    const tokenInstance = await SimpleERC20Token.new(initialSupply);
-
-    const transferableAmount = 4500;
-
-    await tokenInstance.approve(participantAccount1.address, transferableAmount);
-
-    const allowance = await tokenInstance.allowance(ownerAccount.address, participantAccount1.address);
-    assert.equal(Number(allowance), Number(transferableAmount));
-  });
-
-  it('can transfer from one account to the another if approved by owner', async () => {
-    const tokenInstance = await SimpleERC20Token.new(initialSupply);
-
-    const transferableAmount = 4500;
-
-    await tokenInstance.approve(participantAccount1.address, transferableAmount);
-
-    const allowance = Number(await tokenInstance.allowance(ownerAccount.address, participantAccount1.address));
-    assert.equal(allowance, transferableAmount);
-
-    const transferAmount = 3000;
-
-    await tokenInstance.transferFrom(ownerAccount.address, participantAccount2.address, transferAmount, {
-      from: participantAccount1.address,
-    });
-
-    const acc2Balance = Number(await tokenInstance.balanceOf(participantAccount2.address));
-    ownerBalance = Number(await tokenInstance.balanceOf(ownerAccount.address));
-
-    assert.equal(ownerBalance, initialSupply - transferAmount);
-    assert.equal(acc2Balance, transferAmount);
-  });
-
-  it('can transfer to other accounts', async () => {
-    const tokenInstance = await SimpleERC20Token.new(initialSupply);
-
-    const transferAmount = 8000;
-
-    await tokenInstance.transfer(participantAccount1.address, transferAmount);
-    ownerBalance = Number(await tokenInstance.balanceOf(ownerAccount.address));
-    acc2Balance = Number(await tokenInstance.balanceOf(participantAccount1.address));
-
-    assert.equal(ownerBalance, initialSupply - transferAmount);
-    assert.equal(acc2Balance, transferAmount);
-  });
-
-  // todo add test case for splitSignature(bytes memory sig)
-
   it('can get signer address from signature', async () => {
     const result = createSignature({
       participant1Bal: 4000,
